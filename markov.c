@@ -3,7 +3,7 @@
 
 #define DELIM " -> "
 #define MAX_OPERAND_LEN 16
-#define MAX_RULE_STR_LEN (2 * MAX_OPERAND_LEN + sizeof(DELIM))
+#define MAX_RULE_STR_LEN (2 * MAX_OPERAND_LEN + sizeof(DELIM) - 1)
 
 int str_cmp(const char* a, const char* b)
 {
@@ -64,8 +64,8 @@ typedef struct node {
 } MarkovRule;
 
 /*
- * "1 -> 0" left: "1", right: "0", end: 0
- * "00 -> 1." left: "00", right: "1", end: 1
+ * "1 -> 0" left: "1", right: "0"
+ * "00 -> 1." left: "00", right: "1"
  */
 void parse_rule_str(const char* rule_str, char left[MAX_OPERAND_LEN + 1],
     char right[MAX_OPERAND_LEN + 1])
@@ -90,7 +90,7 @@ void parse_rule_str(const char* rule_str, char left[MAX_OPERAND_LEN + 1],
         }
         left[i] = rule_str[i];
     }
-    left[i] = 0;
+    left[i] = '\0';
     for (i = left_end + sizeof(DELIM) - 1, j = 0; rule_str[i]; i++, j++) {
         if (j == MAX_OPERAND_LEN) {
             fprintf(stderr, "Right operand exceeded max length (%d): \"%s\"\n",
@@ -99,7 +99,7 @@ void parse_rule_str(const char* rule_str, char left[MAX_OPERAND_LEN + 1],
         }
         right[j] = rule_str[i];
     }
-    right[j] = 0;
+    right[j] = '\0';
 }
 
 void add_rule(MarkovRule** phead, MarkovRule** ptail, const char* rule_str)
@@ -112,12 +112,8 @@ void add_rule(MarkovRule** phead, MarkovRule** ptail, const char* rule_str)
     parse_rule_str(rule_str, rule->left, rule->right);
 
     if (!(*phead)) {
-        printf("not phead\n");
         *phead = *ptail = rule;
     } else {
-        printf("yes phead\n");
-        /*printf("(*ptail)->left: %s;\n", (char *)(*ptail)->left);*/
-        printf("rule->left: %s;\n", (char*)(*ptail)->left);
         (*ptail)->next = rule;
         *ptail = rule;
     }
@@ -144,16 +140,20 @@ void free_rules_list(MarkovRule* head)
 int main(int argc, char** argv)
 {
     char *rules_file_name, *state;
-    /*FILE* rules_file;*/
+    FILE* rules_file;
 
     handle_args(argc, argv, &rules_file_name, &state);
     printf("rules: %s, state: %s\n", rules_file_name, state);
 
-    /*rules_file = fopen(rules_file_name, "r");*/
-    /*if (!rules_file) {*/
-        /*perror(rules_file_name);*/
-        /*exit(1);*/
-    /*}*/
+    rules_file = fopen(rules_file_name, "r");
+    if (!rules_file) {
+        perror(rules_file_name);
+        exit(1);
+    }
+    char buf[MAX_RULE_STR_LEN + 1];
+    while (fgets(buf, sizeof(buf), rules_file)) {
+        printf("%s\n", buf);
+    }
 
     MarkovRule *rules_head, *rules_tail;
     rules_head = rules_tail = NULL;
