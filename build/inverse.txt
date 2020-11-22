@@ -1,0 +1,39 @@
+a0 -> 0a
+a1 -> 1a
+a -> e
+
+xe -> e0
+x0 -> 0x
+x1 -> 1x
+
+ye -> e1
+y0 -> 0y
+y1 -> 1y
+
+b0 -> bx
+b1 -> by
+be -> _. 
+_ -> ba
+
+1011
+ba1011
+b1a011
+b10a11
+b101a1
+b1011a
+b1011e
+by011e
+b0y11e
+b01y1e
+b011ye
+b011e1
+bx11e1
+b1x1e1
+b11xe1
+b11e01
+by1e01
+b1ye01
+b1e101
+bye101
+be1101
+1101
