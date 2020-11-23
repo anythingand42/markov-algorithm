@@ -6,7 +6,12 @@
 #define MAX_OPERAND_LEN 16
 #define MAX_RULE_STR_LEN (2 * MAX_OPERAND_LEN + (int)sizeof(DELIM) - 1)
 
-enum MarkovResult { Matched = 0, MatchedAndTerminated = 1, Terminated = 2 };
+enum MarkovResult {
+    Matched = 0,
+    MatchedAndTerminated = 1,
+    Terminated = 2,
+    StateLenExceeded = 3
+};
 
 int str_cmp(const char* a, const char* b)
 {
@@ -76,8 +81,8 @@ typedef struct node {
 } MarkovRule;
 
 /*
- * "1 -> 0" left: "1", right: "0"
- * "00 -> 1." left: "00", right: "1."
+ * "1 -> 0" left: "1", right: "0", end: 0
+ * "00 -> 1." left: "00", right: "1", end: 1
  */
 void parse_rule_str(const char* rule_str, MarkovRule* rule)
 {
@@ -94,9 +99,16 @@ void parse_rule_str(const char* rule_str, MarkovRule* rule)
     }
     int i, j;
     for (i = 0; i < left_end; i++) {
+        if (rule_str[i] == '_' && i > 0) {
+            fprintf(stderr,
+                "Misuse of special character '_' in left operand: \"%s\"\n",
+                rule_str);
+            exit(1);
+        }
         if (rule_str[i] == '.') {
             fprintf(stderr,
-                "Unexpected '.' character in left operand: \"%s\"\n", rule_str);
+                "Misuse of special character '.' in left operand: \"%s\"\n",
+                rule_str);
             exit(1);
         }
         rule->left[i] = rule_str[i];
@@ -107,6 +119,12 @@ void parse_rule_str(const char* rule_str, MarkovRule* rule)
         if (j == MAX_OPERAND_LEN) {
             fprintf(stderr, "Right operand exceeded max length (%d): \"%s\"\n",
                 MAX_OPERAND_LEN, rule_str);
+            exit(1);
+        }
+        if (rule_str[i] == '_' && j > 0) {
+            fprintf(stderr,
+                "Misuse of special character '_' in right operand: \"%s\"\n",
+                rule_str);
             exit(1);
         }
         if (rule_str[i] == '.') {
@@ -187,41 +205,111 @@ void parse_rules_file(
 }
 
 /*
- * returns Matched if the rule applied
+ * returns Matched if the rule was applied
  * returns MatchedAndTerminated if the rule just applied was a terminating one
- * returns Terminated if no rule applied
+ * returns Terminated if no rule was applied
+ * returns StateLenExceeded if the length of the state string is exceeded
  */
-int markov_step(const MarkovRule* rule, const char state[MAX_STATE_LEN + 1],
-    char result[MAX_STATE_LEN + 1])
+enum MarkovResult markov_step(const MarkovRule* rule,
+    const char state[MAX_STATE_LEN + 1], char result[MAX_STATE_LEN + 1])
 {
-    int match_start, i, j;
+    printf("markov step call\n");
+    int match_start, i, j, k;
     while (rule) {
-        match_start = str_find(state, rule->left);
-        if (match_start >= 0) {
-            for (i = 0; i < match_start; i++)
-                result[i] = state[i];
-            for (j = 0; state[i] == rule->left[j]; i++, j++) { }
-            for (; state[i]; i++)
-                result[i - j] = state[i];
-            result[i] = '\0';
-            return Matched;
+        if (rule->left[0] == '_') {
+            printf("state: %s, rule left == _\n", state);
+            if (rule->right[0] == '_') {
+                for (i = 0; state[i]; i++)
+                    result[i] = state[i];
+                return rule->end ? MatchedAndTerminated : Matched;
+            }
+            for (i = 0; rule->right[i]; i++) {
+                result[i] = rule->right[i];
+            }
+            for (j = 0; state[j]; j++) {
+                if (i + j == MAX_STATE_LEN) {
+                    result[i + j] = '\0';
+                    return StateLenExceeded;
+                }
+                result[i + j] = state[j];
+            }
+            result[i + j] = '\0';
+            return rule->end ? MatchedAndTerminated : Matched;
+        } else {
+            printf("first else\n");
+            match_start = str_find(state, rule->left);
+            printf("match_start: %d, state: %s, rule->left: %s;\n", match_start,
+                state, rule->left);
+            if (match_start >= 0) {
+                if (rule->right[0] == '_') {
+                    for (i = 0; i < match_start; i++)
+                        result[i] = state[i];
+                    for (j = 0, k = i; state[k] == rule->left[j]; k++, j++) { }
+                    for (; state[k]; i++, k++)
+                        result[i] = state[k];
+                    result[i] = '\0';
+                    return rule->end ? MatchedAndTerminated : Matched;
+                } else {
+                    printf("norm\n");
+                    for (i = 0; i < match_start; i++)
+                        result[i] = state[i];
+                    for (j = 0, k = i; state[k] && state[k] == rule->left[j]; k++, j++) { }
+                    printf("state[k]: %c, state[k-1]: %c\n", state[k],
+                        state[k - 1]);
+                    for (j = 0; rule->right[j]; j++, i++) {
+                        if (i == MAX_STATE_LEN) {
+                            result[i] = '\0';
+                            return StateLenExceeded;
+                        }
+                        result[i] = rule->right[j];
+                    }
+                    for (; state[k]; i++, k++) {
+                        if (i == MAX_STATE_LEN) {
+                            result[i] = '\0';
+                            return StateLenExceeded;
+                        }
+                        result[i] = state[k];
+                    }
+                    result[i] = '\0';
+                    printf("norm result: %s\n", result);
+                    return rule->end ? MatchedAndTerminated : Matched;
+                }
+            }
         }
+        rule = rule->next;
     }
     return Terminated;
 }
 
 int main(int argc, char** argv)
 {
+    int i;
     char *rules_file_name, *state;
+    char result[MAX_STATE_LEN + 1];
+    char state_buf[MAX_STATE_LEN + 1];
+    MarkovRule *rules_head, *rules_tail;
+    enum MarkovResult step_result;
 
     handle_args(argc, argv, &rules_file_name, &state);
     printf("rules: %s, state: %s\n", rules_file_name, state);
 
-    MarkovRule *rules_head, *rules_tail;
     rules_head = rules_tail = NULL;
     parse_rules_file(rules_file_name, &rules_head, &rules_tail);
-
     print_rules(rules_head);
+    printf("================================\n");
+    for (i = 0; state[i]; i++)
+        state_buf[i] = state[i];
+    state_buf[i] = '\0';
+
+    while (
+        (step_result = markov_step(rules_head, state_buf, result)) == Matched) {
+        for (i = 0; result[i]; i++)
+            state_buf[i] = result[i];
+        state_buf[i] = '\0';
+        getchar();
+        printf("%s\n", result);
+    }
+
     free_rules_list(rules_head);
     return 0;
 }
