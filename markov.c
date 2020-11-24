@@ -27,8 +27,8 @@ int str_find(const char* str, const char* substr)
     int i, j;
     for (i = 0; str[i]; i++) {
         if (str[i] == substr[0]) {
-            for (j = 0; substr[j] && str[i + j]; j++) {
-                if (str[i + j] != substr[j])
+            for (j = 0; substr[j]; j++) {
+                if (!str[i + j] || str[i + j] != substr[j])
                     goto try_next;
             }
             return i;
@@ -213,11 +213,9 @@ void parse_rules_file(
 enum MarkovResult markov_step(const MarkovRule* rule,
     const char state[MAX_STATE_LEN + 1], char result[MAX_STATE_LEN + 1])
 {
-    printf("markov step call\n");
     int match_start, i, j, k;
     while (rule) {
         if (rule->left[0] == '_') {
-            printf("state: %s, rule left == _\n", state);
             if (rule->right[0] == '_') {
                 for (i = 0; state[i]; i++)
                     result[i] = state[i];
@@ -236,10 +234,7 @@ enum MarkovResult markov_step(const MarkovRule* rule,
             result[i + j] = '\0';
             return rule->end ? MatchedAndTerminated : Matched;
         } else {
-            printf("first else\n");
             match_start = str_find(state, rule->left);
-            printf("match_start: %d, state: %s, rule->left: %s;\n", match_start,
-                state, rule->left);
             if (match_start >= 0) {
                 if (rule->right[0] == '_') {
                     for (i = 0; i < match_start; i++)
@@ -250,12 +245,10 @@ enum MarkovResult markov_step(const MarkovRule* rule,
                     result[i] = '\0';
                     return rule->end ? MatchedAndTerminated : Matched;
                 } else {
-                    printf("norm\n");
                     for (i = 0; i < match_start; i++)
                         result[i] = state[i];
-                    for (j = 0, k = i; state[k] && state[k] == rule->left[j]; k++, j++) { }
-                    printf("state[k]: %c, state[k-1]: %c\n", state[k],
-                        state[k - 1]);
+                    for (j = 0, k = i; state[k] && state[k] == rule->left[j];
+                         k++, j++) { }
                     for (j = 0; rule->right[j]; j++, i++) {
                         if (i == MAX_STATE_LEN) {
                             result[i] = '\0';
@@ -271,7 +264,6 @@ enum MarkovResult markov_step(const MarkovRule* rule,
                         result[i] = state[k];
                     }
                     result[i] = '\0';
-                    printf("norm result: %s\n", result);
                     return rule->end ? MatchedAndTerminated : Matched;
                 }
             }
@@ -291,25 +283,34 @@ int main(int argc, char** argv)
     enum MarkovResult step_result;
 
     handle_args(argc, argv, &rules_file_name, &state);
-    printf("rules: %s, state: %s\n", rules_file_name, state);
 
     rules_head = rules_tail = NULL;
     parse_rules_file(rules_file_name, &rules_head, &rules_tail);
-    print_rules(rules_head);
-    printf("================================\n");
     for (i = 0; state[i]; i++)
         state_buf[i] = state[i];
     state_buf[i] = '\0';
 
-    while (
-        (step_result = markov_step(rules_head, state_buf, result)) == Matched) {
+    printf("%s\n", state_buf);
+    for (;;) {
+        step_result = markov_step(rules_head, state_buf, result);
+        switch (step_result) {
+        case Matched:
+            printf("%s\n", result);
+            break;
+        case MatchedAndTerminated:
+            printf("%s\n", result);
+        case Terminated:
+            goto terminated;
+        case StateLenExceeded:
+            fprintf(stderr, "State exceeded max length (%d)", MAX_STATE_LEN);
+            exit(1);
+        }
         for (i = 0; result[i]; i++)
             state_buf[i] = result[i];
         state_buf[i] = '\0';
-        getchar();
-        printf("%s\n", result);
     }
 
+terminated:
     free_rules_list(rules_head);
     return 0;
 }
